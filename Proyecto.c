@@ -45,7 +45,7 @@ int main(int argc, char const *argv[])
 
     int inicio = 0x1BE;
     for(int i =0; i<16; i++){
-        printf("%0x ", map[inicio+i]);
+        printf("%0x ", (unsigned char)map[inicio+i]);
     }
     printf("\n");
 
@@ -60,6 +60,6 @@ int main(int argc, char const *argv[])
     short bytespersector = *(short *)&map[part+11];
     unsigned char sectorpercluster = *(unsigned char *)&map[part+13];
 
-    printf("El sector tiene %d bytes y el cluster %d sectores", bytespersector, sectorpercluster);
+    printf("El sector tiene %d bytes y el cluster %d sectores\n", bytespersector, sectorpercluster);
 }
 
