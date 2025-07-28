@@ -69,13 +69,12 @@ return res;
 
 }
 
-const char* get_partition_entry_ptr(unsigned char *mbr_data, int index) {
+unsigned char* get_partition_entry_ptr(unsigned char *mbr_data, int index) {
     return mbr_data + MBR_PARTITION_TABLE_OFFSET + (index * 16);
 }
 
-void mostrar_particiones(char *map) {
+void mostrar_particiones(char *map, int selected_partition_index) {
     clear();
-    int selected_partition_index = 0;
     // Cabecera ajustada para mayor claridad y consistencia
     mvprintw(4, 0, "Particion | Inicio CHS (C|H|S) | Fin CHS (C|H|S) | Tipo | LBA Inicio | Tamano (Sectores)");
     for (int i = 0; i < 4; i++) {
@@ -127,9 +126,58 @@ void mostrar_particiones(char *map) {
     refresh();
 }
 
+void detalles_particion(unsigned char *mbr_data, int index) {
+    clear();
+
+    unsigned char *p_entry = get_partition_entry_ptr(mbr_data, index);
+    unsigned int lba_inicio = *(unsigned int *)&p_entry[PART_START_LBA_OFFSET];
+    unsigned int offset = lba_inicio * 512;
+
+    unsigned char *boot_sector = mbr_data + offset;
+
+    // OEM ID (8 bytes desde offset 0x03)
+    char oem_id[9];
+    memcpy(oem_id, &boot_sector[0x03], 8);
+    oem_id[8] = '\0';
+
+    // Bytes por sector (2 bytes en offset 0x0B)
+    unsigned short bytes_per_sector = *(unsigned short *)&boot_sector[0x0B];
+
+    // Sectores por clúster (1 byte en offset 0x0D)
+    unsigned char sectors_per_cluster = boot_sector[0x0D];
+
+    // Sectores reservados (2 bytes en offset 0x0E)
+    unsigned short reserved_sectors = *(unsigned short *)&boot_sector[0x0E];
+
+    // Número de FATs (1 byte en offset 0x10)
+    unsigned char fat_count = boot_sector[0x10];
+
+    // Tamaño de FAT (FAT32 usa 4 bytes en offset 0x24)
+    unsigned int fat_size = *(unsigned int *)&boot_sector[0x24];
+
+    // Sector de fin (debe contener 0x55AA en offset 0x1FE)
+    unsigned short end_marker = *(unsigned short *)&boot_sector[0x1FE];
+
+    // Mostrar datos
+    mvprintw(2, 0, "--- Detalles de la Partición %d ---", index + 1);
+    mvprintw(4, 0, "OEM ID: %s", oem_id);
+    mvprintw(5, 0, "Bytes por sector: %d", bytes_per_sector);
+    mvprintw(6, 0, "Sectores por clúster: %d", sectors_per_cluster);
+    mvprintw(7, 0, "Sectores reservados: %d", reserved_sectors);
+    mvprintw(8, 0, "Número de FATs: %d", fat_count);
+    mvprintw(9, 0, "Tamaño de cada FAT (bytes): %u", fat_size);
+    mvprintw(10, 0, "End of sector marker (esperado 0xAA55): 0x%04X", end_marker);
+    mvprintw(12, 0, "Presiona cualquier tecla para volver...");
+    refresh();
+
+    getch(); // Espera a que el usuario presione una tecla
+}
+
+
 
 int main(int argc, char const *argv[])
 {
+    int particion_seleccionada = 0;
     if(argc != 2){
         printf("se usa %s \n", argv[0]);
         return (-1);
@@ -143,15 +191,33 @@ int main(int argc, char const *argv[])
     raw();
     noecho(); /* No muestres el caracter leido */
     keypad(stdscr, TRUE);
-    mostrar_particiones(map);
+    do{
+        mostrar_particiones(map, particion_seleccionada);
+        c = getch();
+        switch (c) {
+            case KEY_UP:
+                particion_seleccionada = (particion_seleccionada > 0) ? particion_seleccionada - 1 : 3;
+                break;
+            case KEY_DOWN:
+                particion_seleccionada = (particion_seleccionada < 3) ? particion_seleccionada + 1 : 0;
+                break;
+            case 10: // Enter
+                const unsigned char *p_entry = get_partition_entry_ptr((unsigned char *)map, particion_seleccionada);
+                if(*(unsigned int *)&p_entry[PART_NUM_SECTORS_OFFSET] == 0) {
+                    mvprintw(12, 0, "Particion %d esta VACIA.", particion_seleccionada + 1);
+                } else {
+                    mvprintw(12, 0, "Mostrando detalles de la particion %d...", particion_seleccionada + 1);
+                    detalles_particion((unsigned char *)map, particion_seleccionada);
+                }
+                break;
+            default:
+                break;
+        }
+    } while (c != 'q' && c != 'Q'); // Salir con
 
 
-    char *lista[] = {"Uno", "Dos", "Tres", "Cuatro", "Cinco"};
-    int num = 5;
-    int i = 0; // Indice de la lista
 
-// cbreak(); /* Haz que los caracteres se le pasen al usuario */
-
+    endwin(); /* Termina ncurses */
     return 0;
 
 } 
