@@ -158,6 +158,10 @@ void detalles_particion(unsigned char *mbr_data, int index) {
     // Sector de fin (debe contener 0x55AA en offset 0x1FE)
     unsigned short end_marker = *(unsigned short *)&boot_sector[0x1FE];
 
+    //LBA de inicio y número de sectores
+    unsigned int start_lba = *(unsigned int *)&p_entry[PART_START_LBA_OFFSET];
+    unsigned int num_sectors = *(unsigned int *)&p_entry[PART_NUM_SECTORS_OFFSET];
+
     // Mostrar datos
     mvprintw(2, 0, "--- Detalles de la Partición %d ---", index + 1);
     mvprintw(4, 0, "OEM ID: %s", oem_id);
@@ -167,7 +171,9 @@ void detalles_particion(unsigned char *mbr_data, int index) {
     mvprintw(8, 0, "Número de FATs: %d", fat_count);
     mvprintw(9, 0, "Tamaño de cada FAT (bytes): %u", fat_size);
     mvprintw(10, 0, "End of sector marker (esperado 0xAA55): 0x%04X", end_marker);
-    mvprintw(12, 0, "Presiona cualquier tecla para volver...");
+    mvprintw(11, 0, "LBA de Inicio: %u (sector)", start_lba);
+    mvprintw(12, 0, "Número de Sectores: %u", num_sectors);
+    mvprintw(14, 0, "Presiona cualquier tecla para volver...");
     refresh();
 
     getch(); // Espera a que el usuario presione una tecla
@@ -177,7 +183,7 @@ void detalles_particion(unsigned char *mbr_data, int index) {
 
 int main(int argc, char const *argv[])
 {
-    int particion_seleccionada = 0;
+    int particion_seleccionada = 1;
     if(argc != 2){
         printf("se usa %s \n", argv[0]);
         return (-1);
