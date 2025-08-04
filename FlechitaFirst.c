@@ -245,30 +245,9 @@ void recorrer_mft(unsigned char *map, unsigned int lba_inicio){
         
     }
 
-    //mvprintw(LINES - 1, 0, "Presiona cualquier tecla para volver...");
-    //Para navegar por los resultados, puedes usar las teclas de flecha arriba y abajo
-    mvprintw(22, 0, "Presiona 'q' para salir o 'r' para refrescar.");
-    int c;
-    do {
-        c = getch();
-        switch (c) {
-            case 'q':
-                return; // Salir de la función
-            case 'r':
-                clear();
-                recorrer_mft(map, lba_inicio); // Refrescar la vista
-                break;
-            default:
-                break;
-        }
-    } while (c != 'q' && c != 'r');
-    // Si se presiona 'r', refrescar la vista
-    clear();
-    mvprintw(18, 0, "--- Entrada del MFT ---");
-    mvprintw(20, 0, "Presiona 'q' para salir o 'r' para refrescar.");
-    mvprintw(21, 0, "Presiona 'r' para refrescar la vista de MFT.");
-    mvprintw(23, 0, "Presiona cualquier tecla para volver al menu principal.");
-    mvprintw(24, 0, "Recorriendo MFT...");
+    mvprintw(LINES - 1, 0, "Presiona cualquier tecla para volver...");
+    
+   
     refresh();
     getch(); // Espera a que el usuario presione una tecla
 }
