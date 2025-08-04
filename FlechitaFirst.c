@@ -10,6 +10,8 @@
 #include <sys/types.h>
 #include <stdint.h>
 
+#include "ntfs.h"
+
 #define MBR_PARTITION_TABLE_OFFSET 0x1BE // Donde empieza la tabla de particiones (4 entradas x 16 bytes)
 #define MBR_SIGNATURE_OFFSET       0x1FE // Donde está la firma 0x55AA
 
@@ -179,6 +181,97 @@ void detalles_particion(unsigned char *mbr_data, int index) {
     getch(); // Espera a que el usuario presione una tecla
 }
 
+//Recorrer MFT y mostrar atributos
+void recorrer_mft(unsigned char *map, unsigned int lba_inicio){
+    mvprintw(18, 0, "--- Entrada del MFT ---");
+    unsigned char *mft_base = map + (lba_inicio * 512);
+
+    //ocupamos los parametros necesarios para leer el MFT
+    unsigned short bytes_por_sector = *(unsigned short *)&mft_base[0x0B];
+    unsigned char sectores_por_cluster = mft_base[0x0D];
+    LONGLONG mft_cluster = *(LONGLONG *)&mft_base[0x30]; // MFT empieza en el cluster 0x30
+    int tamaño_cluster = bytes_por_sector * sectores_por_cluster;
+    int size = 1024;
+
+    // Necesitamos el inicio de la MFT
+    unsigned char *mft = map + (lba_inicio * 512) + (mft_cluster * tamaño_cluster);
+
+    for(int i=0, fila = 2; i < 50; i++){
+        struct NTFS_MFT_FILE *mft_file = (struct NTFS_MFT_FILE *)(mft + i * size);
+        if(memcmp(mft_file->szSignature, "FILE", 4) != 0) {
+            continue; // No es una entrada válida
+        }
+
+        char nombre[512] = "(sin nombre)";
+        char tipo[16] = "Archivo";
+        char flags[128] = "";
+
+        // Determinar el tipo de archivo
+        if(mft_file->wFlags & 0x0001) {
+            strcpy(tipo, "Directorio");
+        } else if(mft_file->wFlags & 0x0002) {
+            strcpy(tipo, "Archivo");
+        }
+
+        NTFS_ATTRIBUTE *attr = (NTFS_ATTRIBUTE *)(mft + mft_file->wAttribOffset);
+        while(attr->dwType != 0xFFFFFFFF){
+            if(attr->dwType == 0x10){
+                ATTR_STANDARD *estandar = (ATTR_STANDARD *)((BYTE *)attr + attr->Attr.Resident.wAttrOffset);
+                DWORD flags_value = estandar->dwFATAttributes;
+                if(flags_value & 0x01) {
+                    strcat(flags, "Solo lectura ");
+                }
+                if(flags_value & 0x02) {
+                    strcat(flags, "Oculto ");
+                }
+                if(flags_value & 0x04) {
+                    strcat(flags, "Sistema ");
+                }
+            }
+            else if(attr->dwType == 0x30) {
+                ATTR_FILENAME *fnombre = (ATTR_FILENAME *)((BYTE *)attr + attr->Attr.Resident.wAttrOffset);
+                int tamaño_nombre = fnombre->chFileNameLength;
+                for(int j = 0; j < tamaño_nombre && j < 512; j++) {
+                    nombre[j] = (char)(fnombre->wFilename[j]);// Convertir de Unicode a ASCII
+                }
+                nombre[tamaño_nombre] = '\0'; // Asegurar que el nombre esté terminado en nulo
+            }
+
+            attr = (NTFS_ATTRIBUTE *)((BYTE *)attr + attr->dwFullLength);
+        }
+        //Ahora si podemos mostrar los datos
+        mvprintw(fila++, 0, "MFT FILE %d (0x%p): Nombre: %s , Tipo: %s, Flags: %s", i + 1, (void *)mft_file , nombre, tipo, flags);
+        
+        
+    }
+
+    //mvprintw(LINES - 1, 0, "Presiona cualquier tecla para volver...");
+    //Para navegar por los resultados, puedes usar las teclas de flecha arriba y abajo
+    mvprintw(22, 0, "Presiona 'q' para salir o 'r' para refrescar.");
+    int c;
+    do {
+        c = getch();
+        switch (c) {
+            case 'q':
+                return; // Salir de la función
+            case 'r':
+                clear();
+                recorrer_mft(map, lba_inicio); // Refrescar la vista
+                break;
+            default:
+                break;
+        }
+    } while (c != 'q' && c != 'r');
+    // Si se presiona 'r', refrescar la vista
+    clear();
+    mvprintw(18, 0, "--- Entrada del MFT ---");
+    mvprintw(20, 0, "Presiona 'q' para salir o 'r' para refrescar.");
+    mvprintw(21, 0, "Presiona 'r' para refrescar la vista de MFT.");
+    mvprintw(23, 0, "Presiona cualquier tecla para volver al menu principal.");
+    mvprintw(24, 0, "Recorriendo MFT...");
+    refresh();
+    getch(); // Espera a que el usuario presione una tecla
+}
 
 
 int main(int argc, char const *argv[])
@@ -214,6 +307,8 @@ int main(int argc, char const *argv[])
                 } else {
                     mvprintw(12, 0, "Mostrando detalles de la particion %d...", particion_seleccionada + 1);
                     detalles_particion((unsigned char *)map, particion_seleccionada);
+                    unsigned int lba_inicio = *(unsigned int *)&p_entry[PART_START_LBA_OFFSET];
+                    recorrer_mft((unsigned char *)map, lba_inicio);
                 }
                 break;
             default:
