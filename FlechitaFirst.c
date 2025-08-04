@@ -9,6 +9,7 @@
 #include <errno.h>
 #include <sys/types.h>
 #include <stdint.h>
+#include <time.h>
 
 #include "ntfs.h"
 
@@ -203,6 +204,20 @@ void determinar_tipo_archivo(const char *nombre, char *tipo) {
     else strcpy(tipo, "Archivo");
 }
 
+void filetime_to_str(LONGLONG ft, char *out, size_t out_sz) {
+    // 116444736000000000 = diferencia entre 1601 y 1970 en unidades de 100ns
+    if (ft == 0) {
+        strncpy(out, "(sin fecha)", out_sz);
+        out[out_sz-1] = '\0';
+        return;
+    }
+    uint64_t unix_time_sec = (uint64_t)((ft - 116444736000000000ULL) / 10000000ULL);
+    time_t t = (time_t)unix_time_sec;
+    struct tm tm;
+    gmtime_r(&t, &tm); // o localtime_r si prefieres hora local
+    strftime(out, out_sz, "%Y-%m-%d %H:%M:%S", &tm);
+}
+
 //Recorrer MFT y mostrar atributos
 void recorrer_mft(unsigned char *map, unsigned int lba_inicio){
     mvprintw(18, 0, "--- Entrada del MFT ---");
@@ -232,6 +247,9 @@ void recorrer_mft(unsigned char *map, unsigned int lba_inicio){
         char atributos[64] = "";
         int tiene_nombre_valido = 0;
         int es_directorio = 0;
+
+        uint64_t tamaño_real = 0;
+        char fecha_mod[20] = "(sin fecha)";
         
         // Recorrer atributos
         NTFS_ATTRIBUTE *attr = (NTFS_ATTRIBUTE *)((char *)mft_file + mft_file->wAttribOffset);
@@ -252,20 +270,27 @@ void recorrer_mft(unsigned char *map, unsigned int lba_inicio){
             else if (attr->dwType == 0x30) { // File Name
                 if (attr->uchNonResFlag == 0) { // Resident
                     ATTR_FILENAME *fn = (ATTR_FILENAME *)((char *)attr + attr->Attr.Resident.wAttrOffset);
-                    
-                    // Convertir nombre Unicode a ASCII (simplificado)
+
+                    // Nombre (como ya lo conviertes)
                     int len = fn->chFileNameLength;
                     for (int j = 0; j < len && j < 255; j++) {
-                        nombre[j] = (fn->wFilename[j] < 128) ? fn->wFilename[j] : '?'; // Convertir a ASCII
+                        nombre[j] = (fn->wFilename[j] < 128) ? fn->wFilename[j] : '?';
                     }
                     nombre[len] = '\0';
                     tiene_nombre_valido = 1;
 
-                    if(fn->dwFlags & 0x10000000) { // Verificar si es directorio
+                    if (fn->dwFlags & 0x10000000) { // Verificar si es directorio
                         es_directorio = 1;
                     }
+
+                    // --- Obtener tamaño real ---
+                    tamaño_real = fn->n64RealSize;
+
+                    // --- Obtener fecha de modificación ---
+                    filetime_to_str(fn->n64Modify, fecha_mod, sizeof(fecha_mod));
                 }
             }
+
             
             attr = (NTFS_ATTRIBUTE *)((char *)attr + attr->dwFullLength);
         }
@@ -289,8 +314,13 @@ void recorrer_mft(unsigned char *map, unsigned int lba_inicio){
                 nombre_display[20] = '\0';
             }
             
-            mvprintw(fila++, 0, "%3d | %-21s | %-10s | %s", 
-                    i, nombre_display, tipo, atributos);
+            mvprintw(fila++, 0, "%3d | %-21s | %-10s | %10llu bytes | %19s | %s", 
+                i,
+                nombre_display,
+                tipo,
+                (unsigned long long)tamaño_real,
+                fecha_mod,
+                atributos);
         }
     }
     
@@ -342,9 +372,7 @@ int main(int argc, char const *argv[])
         }
     } while (c != 'q' && c != 'Q'); // Salir con
 
-
-
     endwin(); /* Termina ncurses */
     return 0;
 
-} 
+}
