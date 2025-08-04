@@ -23,6 +23,8 @@
 
 int fd;
 
+
+
 char *mapFile(char *filePath) {
     /* Abre archivo */
     fd = open(filePath, O_RDONLY);
@@ -196,60 +198,64 @@ void recorrer_mft(unsigned char *map, unsigned int lba_inicio){
     // Necesitamos el inicio de la MFT
     unsigned char *mft = map + (lba_inicio * 512) + (mft_cluster * tamaño_cluster);
 
-    for(int i=0, fila = 2; i < 50; i++){
-        struct NTFS_MFT_FILE *mft_file = (struct NTFS_MFT_FILE *)(mft + i * size);
-        if(memcmp(mft_file->szSignature, "FILE", 4) != 0) {
-            continue; // No es una entrada válida
+    int fila = 3;
+    for (int i = 0; i < 50 && fila < LINES - 2; i++) {
+        struct NTFS_MFT_FILE *mft_file = (struct NTFS_MFT_FILE *)(mft + (i * size));
+        
+        // Verificar firma "FILE"
+        if (memcmp(mft_file->szSignature, "FILE", 4) != 0) {
+            continue;
         }
-
-        char nombre[512] = "(sin nombre)";
+        
+        char nombre[256] = "(sin nombre)";
         char tipo[16] = "Archivo";
-        char flags[128] = "";
-
-        // Determinar el tipo de archivo
-        if(mft_file->wFlags & 0x0001) {
+        char atributos[64] = "";
+        
+        // Recorrer atributos
+        NTFS_ATTRIBUTE *attr = (NTFS_ATTRIBUTE *)((char *)mft_file + mft_file->wAttribOffset);
+        while ((char *)attr < (char *)mft_file + mft_file->dwRecLength && 
+               attr->dwType != 0xFFFFFFFF) {
+            
+            if (attr->dwType == 0x10) { // Standard Information
+                if (attr->uchNonResFlag == 0) { // Resident
+                    ATTR_STANDARD *std_info = (ATTR_STANDARD *)((char *)attr + attr->Attr.Resident.wAttrOffset);
+                    uint32_t flags = std_info->dwFATAttributes;
+                    
+                    if (flags & 0x01) strcat(atributos, "RO ");
+                    if (flags & 0x02) strcat(atributos, "Oculto ");
+                    if (flags & 0x04) strcat(atributos, "Sistema ");
+                    if (flags & 0x20) strcat(atributos, "Archive ");
+                }
+            } 
+            else if (attr->dwType == 0x30) { // File Name
+                if (attr->uchNonResFlag == 0) { // Resident
+                    ATTR_FILENAME *fn = (ATTR_FILENAME *)((char *)attr + attr->Attr.Resident.wAttrOffset);
+                    
+                    // Convertir nombre Unicode a ASCII (simplificado)
+                    int len = fn->chFileNameLength;
+                    for (int j = 0; j < len && j < 255; j++) {
+                        nombre[j] = (char)(fn->wFilename[j] & 0xFF);
+                    }
+                    nombre[len] = '\0';
+                }
+            }
+            
+            attr = (NTFS_ATTRIBUTE *)((char *)attr + attr->dwFullLength);
+        }
+        
+        // Determinar tipo
+        if (mft_file->wFlags & 0x0001) {
             strcpy(tipo, "Directorio");
-        } else if(mft_file->wFlags & 0x0002) {
-            strcpy(tipo, "Archivo");
         }
-
-        NTFS_ATTRIBUTE *attr = (NTFS_ATTRIBUTE *)(mft + mft_file->wAttribOffset);
-        while(attr->dwType != 0xFFFFFFFF){
-            if(attr->dwType == 0x10){
-                ATTR_STANDARD *estandar = (ATTR_STANDARD *)((BYTE *)attr + attr->Attr.Resident.wAttrOffset);
-                DWORD flags_value = estandar->dwFATAttributes;
-                if(flags_value & 0x01) {
-                    strcat(flags, "Solo lectura ");
-                }
-                if(flags_value & 0x02) {
-                    strcat(flags, "Oculto ");
-                }
-                if(flags_value & 0x04) {
-                    strcat(flags, "Sistema ");
-                }
-            }
-            else if(attr->dwType == 0x30) {
-                ATTR_FILENAME *fnombre = (ATTR_FILENAME *)((BYTE *)attr + attr->Attr.Resident.wAttrOffset);
-                int tamaño_nombre = fnombre->chFileNameLength;
-                for(int j = 0; j < tamaño_nombre && j < 512; j++) {
-                    nombre[j] = (char)(fnombre->wFilename[j]);// Convertir de Unicode a ASCII
-                }
-                nombre[tamaño_nombre] = '\0'; // Asegurar que el nombre esté terminado en nulo
-            }
-
-            attr = (NTFS_ATTRIBUTE *)((BYTE *)attr + attr->dwFullLength);
-        }
-        //Ahora si podemos mostrar los datos
-        mvprintw(fila++, 0, "MFT FILE %d (0x%p): Nombre: %s , Tipo: %s, Flags: %s", i + 1, (void *)mft_file , nombre, tipo, flags);
         
-        
+        // Mostrar entrada
+        mvprintw(fila++, 0, "%3d | %-21s | %-10s | %s", 
+                i, nombre, tipo, atributos);
     }
-
-    mvprintw(LINES - 1, 0, "Presiona cualquier tecla para volver...");
     
-   
+    mvprintw(LINES - 1, 0, "Presione cualquier tecla para volver...");
     refresh();
-    getch(); // Espera a que el usuario presione una tecla
+    getch();
 }
 
 

@@ -3,7 +3,8 @@ typedef unsigned short int WORD;
 typedef unsigned int DWORD;
 typedef unsigned long long LONGLONG;
 
-
+								// followed by resident and
+								// part of non-res attributes
 struct NTFS_MFT_FILE
 {
 	char		szSignature[4];		// Signature "FILE"
