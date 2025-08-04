@@ -183,6 +183,26 @@ void detalles_particion(unsigned char *mbr_data, int index) {
     getch(); // Espera a que el usuario presione una tecla
 }
 
+void determinar_tipo_archivo(const char *nombre, char *tipo) {
+    const char *ext = strrchr(nombre, '.');
+    if (!ext) {
+        strcpy(tipo, "Archivo");
+        return;
+    }
+    
+    ext++; // Saltar el punto
+    
+    if (strcasecmp(ext, "txt") == 0) strcpy(tipo, "Texto");
+    else if (strcasecmp(ext, "html") == 0 || strcasecmp(ext, "htm") == 0) strcpy(tipo, "HTML");
+    else if (strcasecmp(ext, "exe") == 0 || strcasecmp(ext, "dll") == 0) strcpy(tipo, "Ejecutable");
+    else if (strcasecmp(ext, "jpg") == 0 || strcasecmp(ext, "jpeg") == 0) strcpy(tipo, "Imagen JPEG");
+    else if (strcasecmp(ext, "png") == 0) strcpy(tipo, "Imagen PNG");
+    else if (strcasecmp(ext, "pdf") == 0) strcpy(tipo, "PDF");
+    else if (strcasecmp(ext, "doc") == 0 || strcasecmp(ext, "docx") == 0) strcpy(tipo, "Documento Word");
+    else if (strcasecmp(ext, "xls") == 0 || strcasecmp(ext, "xlsx") == 0) strcpy(tipo, "Hoja de cálculo");
+    else strcpy(tipo, "Archivo");
+}
+
 //Recorrer MFT y mostrar atributos
 void recorrer_mft(unsigned char *map, unsigned int lba_inicio){
     mvprintw(18, 0, "--- Entrada del MFT ---");
@@ -199,7 +219,7 @@ void recorrer_mft(unsigned char *map, unsigned int lba_inicio){
     unsigned char *mft = map + (lba_inicio * 512) + (mft_cluster * tamaño_cluster);
 
     int fila = 3;
-    for (int i = 0; i < 50 && fila < LINES - 2; i++) {
+    for (int i = 0; i < 150 && fila < LINES - 2; i++) {
         struct NTFS_MFT_FILE *mft_file = (struct NTFS_MFT_FILE *)(mft + (i * size));
         
         // Verificar firma "FILE"
@@ -210,6 +230,8 @@ void recorrer_mft(unsigned char *map, unsigned int lba_inicio){
         char nombre[256] = "(sin nombre)";
         char tipo[16] = "Archivo";
         char atributos[64] = "";
+        int tiene_nombre_valido = 0;
+        int es_directorio = 0;
         
         // Recorrer atributos
         NTFS_ATTRIBUTE *attr = (NTFS_ATTRIBUTE *)((char *)mft_file + mft_file->wAttribOffset);
@@ -234,23 +256,42 @@ void recorrer_mft(unsigned char *map, unsigned int lba_inicio){
                     // Convertir nombre Unicode a ASCII (simplificado)
                     int len = fn->chFileNameLength;
                     for (int j = 0; j < len && j < 255; j++) {
-                        nombre[j] = (char)(fn->wFilename[j] & 0xFF);
+                        nombre[j] = (fn->wFilename[j] < 128) ? fn->wFilename[j] : '?'; // Convertir a ASCII
                     }
                     nombre[len] = '\0';
+                    tiene_nombre_valido = 1;
+
+                    if(fn->dwFlags & 0x10000000) { // Verificar si es directorio
+                        es_directorio = 1;
+                    }
                 }
             }
             
             attr = (NTFS_ATTRIBUTE *)((char *)attr + attr->dwFullLength);
         }
         
-        // Determinar tipo
-        if (mft_file->wFlags & 0x0001) {
+        //Ahora debemos determinar el tipo de archivo si es directorio o archivo o texto o otro
+        
+        if (es_directorio) {
             strcpy(tipo, "Directorio");
+        } else {
+            determinar_tipo_archivo(nombre, tipo);
         }
         
-        // Mostrar entrada
-        mvprintw(fila++, 0, "%3d | %-21s | %-10s | %s", 
-                i, nombre, tipo, atributos);
+        if (tiene_nombre_valido || nombre[0] == '$') {
+            // Acortar nombres muy largos para mejor visualización
+            char nombre_display[22];
+            strncpy(nombre_display, nombre, 20);
+            nombre_display[20] = '\0';
+            if (strlen(nombre) > 20) {
+                nombre_display[18] = '.';
+                nombre_display[19] = '.';
+                nombre_display[20] = '\0';
+            }
+            
+            mvprintw(fila++, 0, "%3d | %-21s | %-10s | %s", 
+                    i, nombre_display, tipo, atributos);
+        }
     }
     
     mvprintw(LINES - 1, 0, "Presione cualquier tecla para volver...");
